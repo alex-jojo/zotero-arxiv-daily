@@ -63,6 +63,33 @@ def test_arxiv_retriever(config, mock_feedparser, monkeypatch):
     assert set(p.title for p in papers) == set(e.title for e in new_entries)
 
 
+def test_convert_to_paper_skips_full_text_when_llm_is_disabled(config, monkeypatch):
+    from omegaconf import open_dict
+
+    with open_dict(config):
+        config.llm.enabled = False
+
+    def fail_if_called(paper):
+        raise AssertionError("Full text extraction should be skipped when LLM is disabled")
+
+    monkeypatch.setattr(arxiv_retriever, "extract_text_from_tar", fail_if_called)
+    monkeypatch.setattr(arxiv_retriever, "extract_text_from_html", fail_if_called)
+    monkeypatch.setattr(arxiv_retriever, "extract_text_from_pdf", fail_if_called)
+
+    raw_paper = SimpleNamespace(
+        title="No LLM Paper",
+        authors=[SimpleNamespace(name="Test Author")],
+        summary="Original abstract.",
+        pdf_url="https://arxiv.org/pdf/2601.00001",
+        entry_id="https://arxiv.org/abs/2601.00001",
+    )
+
+    paper = ArxivRetriever(config).convert_to_paper(raw_paper)
+
+    assert paper.full_text is None
+    assert paper.abstract == "Original abstract."
+
+
 def test_run_with_hard_timeout_returns_value():
     result = _run_with_hard_timeout(
         _sleep_and_return, ("done", 0.01), timeout=1, operation="test op", paper_title="paper"

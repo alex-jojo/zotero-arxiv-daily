@@ -143,6 +143,23 @@ def test_fetch_zotero_corpus_paper_with_zero_collections(config, monkeypatch):
     assert corpus[0].paths == []
 
 
+def test_executor_does_not_create_llm_client_when_disabled(config, monkeypatch):
+    from omegaconf import open_dict
+
+    with open_dict(config):
+        config.llm.enabled = False
+
+    def fail_if_called(**kwargs):
+        raise AssertionError("OpenAI client should not be created when LLM is disabled")
+
+    monkeypatch.setattr("zotero_arxiv_daily.executor.OpenAI", fail_if_called)
+
+    executor = Executor(config)
+
+    assert executor.llm_enabled is False
+    assert executor.openai_client is None
+
+
 # ---------------------------------------------------------------------------
 # E2E: Executor.run()
 # ---------------------------------------------------------------------------

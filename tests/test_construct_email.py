@@ -47,6 +47,12 @@ def test_render_email_no_affiliations():
     assert "Unknown Affiliation" in html
 
 
+def test_render_email_uses_abstract_when_tldr_is_missing():
+    paper = make_sample_paper(tldr=None, abstract="Original paper abstract.")
+    html = render_email([paper])
+    assert "<strong>Abstract:</strong> Original paper abstract." in html
+
+
 def test_get_stars_low_score():
     assert get_stars(5.0) == ""
     assert get_stars(6.0) == ""
