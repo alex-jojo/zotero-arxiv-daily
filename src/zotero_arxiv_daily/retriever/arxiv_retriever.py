@@ -1,5 +1,4 @@
 from .base import BaseRetriever, register_retriever
-import arxiv
 from arxiv import Result as ArxivResult
 from ..protocol import Paper
 from ..utils import extract_markdown_from_pdf, extract_tex_code_from_tar
@@ -9,7 +8,7 @@ from tqdm import tqdm
 import multiprocessing
 import os
 from queue import Empty
-from time import sleep
+from datetime import datetime
 from typing import Any, Callable, TypeVar
 from loguru import logger
 import requests
@@ -19,6 +18,61 @@ T = TypeVar("T")
 DOWNLOAD_TIMEOUT = (10, 60)
 PDF_EXTRACT_TIMEOUT = 180
 TAR_EXTRACT_TIMEOUT = 180
+
+
+def _parse_feed_datetime(value: str | None) -> datetime:
+    if not value:
+        return datetime.min
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min
+
+
+def _rss_entry_to_result(entry: Any) -> ArxivResult:
+    """Build an arxiv.Result from the daily RSS entry without using the API.
+
+    The export API is frequently rate-limited for shared GitHub Actions IPs.
+    Daily RSS entries already contain all metadata needed for ranking and email,
+    so using them directly makes the scheduled job substantially more reliable.
+    """
+    paper_id = entry.id.removeprefix("oai:arXiv.org:")
+    entry_id = f"https://arxiv.org/abs/{paper_id}"
+    pdf_url = f"https://arxiv.org/pdf/{paper_id}"
+
+    creator = entry.get("author", "")
+    authors = [
+        ArxivResult.Author(name.strip())
+        for name in creator.split(",")
+        if name.strip()
+    ]
+
+    summary = entry.get("summary", "")
+    prefix, separator, abstract = summary.partition("Abstract:")
+    if separator and prefix.lstrip().startswith("arXiv:"):
+        summary = abstract.strip()
+
+    categories = [tag.term for tag in entry.get("tags", []) if tag.get("term")]
+    links = [
+        ArxivResult.Link(entry_id, rel="alternate", content_type="text/html"),
+        ArxivResult.Link(
+            pdf_url,
+            title="pdf",
+            rel="related",
+            content_type="application/pdf",
+        ),
+    ]
+    return ArxivResult(
+        entry_id=entry_id,
+        updated=_parse_feed_datetime(entry.get("updated")),
+        published=_parse_feed_datetime(entry.get("published")),
+        title=entry.get("title", ""),
+        authors=authors,
+        summary=summary,
+        primary_category=categories[0] if categories else "",
+        categories=categories,
+        links=links,
+    )
 
 
 def _download_file(url: str, path: str) -> None:
@@ -114,47 +168,22 @@ class ArxivRetriever(BaseRetriever):
             raise ValueError("category must be specified for arxiv.")
 
     def _retrieve_raw_papers(self) -> list[ArxivResult]:
-        client = arxiv.Client(num_retries=10, delay_seconds=10)
         query = '+'.join(self.config.source.arxiv.category)
         include_cross_list = self.config.source.arxiv.get("include_cross_list", False)
         # Get the latest paper from arxiv rss feed
         feed = feedparser.parse(f"https://rss.arxiv.org/atom/{query}")
         if 'Feed error for query' in feed.feed.title:
             raise Exception(f"Invalid ARXIV_QUERY: {query}.")
-        raw_papers = []
         allowed_announce_types = {"new", "cross"} if include_cross_list else {"new"}
-        all_paper_ids = [
-            i.id.removeprefix("oai:arXiv.org:")
-            for i in feed.entries
-            if i.get("arxiv_announce_type", "new") in allowed_announce_types
+        entries = [
+            entry
+            for entry in feed.entries
+            if entry.get("arxiv_announce_type", "new") in allowed_announce_types
         ]
         if self.config.executor.debug:
-            all_paper_ids = all_paper_ids[:10]
+            entries = entries[:10]
 
-        # Get full information of each paper from arxiv api
-        bar = tqdm(total=len(all_paper_ids))
-        max_batch_retries = 5
-        batch_retry_delay = 30
-        for i in range(0, len(all_paper_ids), 20):
-            search = arxiv.Search(id_list=all_paper_ids[i:i + 20])
-            for attempt in range(max_batch_retries):
-                try:
-                    batch = list(client.results(search))
-                    bar.update(len(batch))
-                    raw_papers.extend(batch)
-                    break
-                except arxiv.HTTPError as exc:
-                    if exc.status == 429 and attempt < max_batch_retries - 1:
-                        wait = batch_retry_delay * (attempt + 1)
-                        logger.warning(f"arXiv API 429 on batch {i // 20}, retry {attempt + 1}/{max_batch_retries} in {wait}s")
-                        sleep(wait)
-                    else:
-                        raise
-            if i + 20 < len(all_paper_ids):
-                sleep(3)
-        bar.close()
-
-        return raw_papers
+        return [_rss_entry_to_result(entry) for entry in tqdm(entries)]
 
     def convert_to_paper(self, raw_paper: ArxivResult) -> Paper:
         title = raw_paper.title
