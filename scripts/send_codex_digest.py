@@ -34,8 +34,8 @@ def validate(payload: dict) -> None:
     if payload.get("model") != "gpt-5.6-sol":
         raise ValueError("Digest must declare model=gpt-5.6-sol")
     papers = payload.get("papers")
-    if not isinstance(papers, list) or len(papers) != 5:
-        raise ValueError("Digest must contain exactly five papers")
+    if not isinstance(papers, list) or len(papers) != 3:
+        raise ValueError("Digest must contain exactly three papers")
     required = {
         "title", "authors", "url", "pdf_url", "summary_zh", "reason_zh", "relevance_score"
     }

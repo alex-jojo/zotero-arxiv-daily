@@ -32,8 +32,8 @@ def main() -> None:
     args = parser.parse_args()
 
     digest = json.loads(args.digest.read_text(encoding="utf-8"))
-    if digest.get("model") != "gpt-5.6-sol" or len(digest.get("papers", [])) != 5:
-        raise ValueError("Expected five papers selected by gpt-5.6-sol")
+    if digest.get("model") != "gpt-5.6-sol" or len(digest.get("papers", [])) != 3:
+        raise ValueError("Expected three papers selected by gpt-5.6-sol")
 
     encoded = base64.b64encode(
         json.dumps(digest, ensure_ascii=False).encode("utf-8")
