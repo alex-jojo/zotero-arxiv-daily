@@ -1,0 +1,26 @@
+name: Prepare Codex digest data
+
+on:
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Export private recommendation input
+        env:
+          ZOTERO_ID: ${{ secrets.ZOTERO_ID }}
+          ZOTERO_KEY: ${{ secrets.ZOTERO_KEY }}
+        run: uv run scripts/export_codex_digest_input.py --output codex-digest-input/input.json
+
+      - name: Upload recommendation input
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-digest-input
+          path: codex-digest-input/input.json
+          retention-days: 1
+          if-no-files-found: error

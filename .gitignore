@@ -16,4 +16,5 @@ logs
 models
 test-compose.yml
 outputs
+.codex-daily/
 config/private.yaml

@@ -1,0 +1,24 @@
+name: Send Codex digest email
+
+on:
+  workflow_dispatch:
+    inputs:
+      digest_b64:
+        description: Base64-encoded GPT-selected digest JSON
+        required: true
+        type: string
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Send GPT-selected digest
+        env:
+          DIGEST_B64: ${{ inputs.digest_b64 }}
+          SENDER: ${{ secrets.SENDER }}
+          RECEIVER: ${{ secrets.RECEIVER }}
+          SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
+          SMTP_SERVER: smtp.gmail.com
+        run: python scripts/send_codex_digest.py
