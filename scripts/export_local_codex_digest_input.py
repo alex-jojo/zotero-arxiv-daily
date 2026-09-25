@@ -38,6 +38,24 @@ def urlopen_no_proxy(url: str, timeout: int = 30):
     return opener.open(request, timeout=timeout)
 
 
+def urlopen_with_proxy_fallback(url: str, timeout: int = 30):
+    """Use the user's configured proxy first, then try a direct connection."""
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "zotero-arxiv-daily-codex/1.0"},
+    )
+    try:
+        return urllib.request.urlopen(request, timeout=timeout)
+    except Exception as proxy_error:
+        try:
+            return urlopen_no_proxy(url, timeout=timeout)
+        except Exception as direct_error:
+            raise RuntimeError(
+                f"Could not fetch {url} through the configured proxy or directly: "
+                f"proxy={proxy_error!r}; direct={direct_error!r}"
+            ) from direct_error
+
+
 def fetch_json(url: str) -> list[dict]:
     with urlopen_no_proxy(url) as response:
         return json.loads(response.read().decode("utf-8"))
@@ -109,7 +127,7 @@ def fetch_zotero_corpus() -> list[dict]:
 
 def fetch_arxiv_candidates(categories: list[str]) -> list[dict]:
     url = f"https://rss.arxiv.org/atom/{'+'.join(categories)}"
-    with urlopen_no_proxy(url, timeout=60) as response:
+    with urlopen_with_proxy_fallback(url, timeout=60) as response:
         feed = feedparser.parse(response.read())
     if getattr(feed, "bozo", False) and not feed.entries:
         raise RuntimeError(f"Failed to read arXiv RSS: {feed.get('bozo_exception')}")
@@ -207,7 +225,7 @@ def main() -> None:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "instructions": {
             "model": "gpt-5.6-sol",
-            "paper_count": 5,
+            "paper_count": 3,
             "language": "Chinese",
         },
         "zotero_corpus": corpus,
@@ -219,8 +237,8 @@ def main() -> None:
     }
     if not payload["zotero_corpus"]:
         raise RuntimeError("No Zotero papers with abstracts were found")
-    if len(payload["arxiv_candidates"]) < 5:
-        raise RuntimeError("Fewer than five new arXiv candidates were found")
+    if len(payload["arxiv_candidates"]) < 3:
+        raise RuntimeError("Fewer than three new arXiv candidates were found")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(
