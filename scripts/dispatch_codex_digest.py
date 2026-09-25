@@ -28,6 +28,7 @@ def run(*args: str, input_text: str | None = None) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("digest", type=Path)
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     digest = json.loads(args.digest.read_text(encoding="utf-8"))
@@ -39,6 +40,9 @@ def main() -> None:
     ).decode("ascii")
     if len(encoded) > 60_000:
         raise ValueError("Digest is too large for a GitHub workflow input")
+    if args.dry_run:
+        print(f"Digest validated; encoded payload is {len(encoded)} characters")
+        return
 
     before = run(
         "gh", "run", "list", "--repo", REPOSITORY, "--workflow", WORKFLOW,
